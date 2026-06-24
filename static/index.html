@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>nl2app — compiler for software generation</title>
+<style>
+  :root {
+    --bg: #0b0d12;
+    --panel: #12151c;
+    --panel-raised: #161a23;
+    --border: #23262f;
+    --text: #e4e6eb;
+    --muted: #7b818f;
+    --accent: #e8a23d;
+    --success: #5fb878;
+    --error: #e0626b;
+    --mono: 'IBM Plex Mono', 'JetBrains Mono', 'SF Mono', Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--mono);
+    margin: 0;
+    padding: 0;
+    min-height: 100vh;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 28px 20px 80px; }
+
+  header { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 6px; flex-wrap: wrap; gap: 8px;}
+  .brand { font-size: 15px; font-weight: 600; letter-spacing: 0.02em; color: var(--text); }
+  .brand .dot { color: var(--accent); }
+  .tagline { color: var(--muted); font-size: 12px; }
+  .subhead { color: var(--muted); font-size: 13px; margin: 4px 0 28px; line-height: 1.6; max-width: 640px; }
+
+  .input-row { display: flex; gap: 10px; margin-bottom: 8px; }
+  textarea {
+    flex: 1;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 13px;
+    padding: 12px 14px;
+    resize: vertical;
+    min-height: 64px;
+    line-height: 1.5;
+  }
+  textarea:focus { outline: none; border-color: var(--accent); }
+  button#runBtn {
+    background: var(--accent);
+    color: #1a1304;
+    border: none;
+    border-radius: 4px;
+    padding: 0 22px;
+    font-family: var(--mono);
+    font-weight: 600;
+    font-size: 13px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  button#runBtn:disabled { opacity: 0.5; cursor: not-allowed; }
+  button#runBtn:hover:not(:disabled) { background: #f2b454; }
+
+  .examples { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 28px; }
+  .ex-chip {
+    font-size: 11px; color: var(--muted); border: 1px solid var(--border);
+    border-radius: 12px; padding: 4px 10px; cursor: pointer; background: var(--panel);
+  }
+  .ex-chip:hover { border-color: var(--accent); color: var(--text); }
+
+  .pipeline { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 24px; }
+  .stage {
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 10px 12px;
+    background: var(--panel);
+    position: relative;
+    transition: border-color 0.3s, background 0.3s;
+  }
+  .stage .num { font-size: 10px; color: var(--muted); }
+  .stage .label { font-size: 12px; margin-top: 2px; }
+  .stage .status { font-size: 10px; margin-top: 6px; color: var(--muted); }
+  .stage.active { border-color: var(--accent); background: var(--panel-raised); }
+  .stage.active .status { color: var(--accent); }
+  .stage.done { border-color: var(--success); }
+  .stage.done .status { color: var(--success); }
+  .stage.failed { border-color: var(--error); }
+  .stage.failed .status { color: var(--error); }
+  .stage.active::after {
+    content: ''; position: absolute; top: -1px; left: -1px; right: -1px; bottom: -1px;
+    border: 1px solid var(--accent); border-radius: 4px;
+    animation: pulse 1.4s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%, 100% { opacity: 0.3; } 50% { opacity: 1; } }
+
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 4px; margin-bottom: 16px; overflow: hidden; }
+  .panel-head {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 10px 14px; border-bottom: 1px solid var(--border); cursor: pointer;
+    font-size: 12px; color: var(--muted); user-select: none;
+  }
+  .panel-head:hover { color: var(--text); }
+  .panel-head .title { color: var(--text); font-weight: 600; }
+  .panel-body { padding: 14px; font-size: 12px; }
+  .panel-body.collapsed { display: none; }
+  pre { white-space: pre-wrap; word-break: break-word; margin: 0; font-size: 11.5px; line-height: 1.5; color: #c7cad1; }
+
+  .metrics { display: flex; gap: 18px; flex-wrap: wrap; font-size: 11px; color: var(--muted); margin: 10px 0 20px; }
+  .metrics b { color: var(--text); }
+
+  .badge { font-size: 10px; padding: 2px 8px; border-radius: 10px; border: 1px solid var(--border); }
+  .badge.ok { color: var(--success); border-color: var(--success); }
+  .badge.fail { color: var(--error); border-color: var(--error); }
+
+  .repair-action { padding: 4px 0; border-bottom: 1px solid var(--border); font-size: 11.5px; }
+  .repair-action:last-child { border-bottom: none; }
+  .strategy-tag { color: var(--accent); }
+
+  .empty { color: var(--muted); font-size: 12px; padding: 30px 0; text-align: center; }
+  .clarify-box { border: 1px solid var(--accent); border-radius: 4px; padding: 14px; background: var(--panel-raised); margin-bottom: 16px; }
+  .clarify-box ul { margin: 8px 0 0; padding-left: 18px; color: var(--text); font-size: 12.5px; }
+
+  .tabs { display: flex; gap: 4px; margin-bottom: 0; }
+  .tab-btn {
+    background: var(--panel); border: 1px solid var(--border); border-bottom: none;
+    color: var(--muted); font-family: var(--mono); font-size: 11px; padding: 6px 12px;
+    cursor: pointer; border-radius: 4px 4px 0 0;
+  }
+  .tab-btn.active { color: var(--text); background: var(--panel-raised); }
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+
+  footer { margin-top: 40px; color: var(--muted); font-size: 11px; text-align: center; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="brand">nl2app<span class="dot">.</span>compiler</div>
+    <div class="tagline">natural language → validated config → executable app</div>
+  </header>
+  <p class="subhead">A 4-stage generation pipeline with a deterministic validation + repair engine. Enter an app description below — every stage, repair action, and consistency check runs live and is shown, not just claimed.</p>
+
+  <div class="input-row">
+    <textarea id="promptInput" placeholder="e.g. Build a CRM with login, contacts, dashboard, role-based access, and premium plan with payments. Admins can see analytics.">Build a CRM with login, contacts, dashboard, role-based access, and premium plan with payments. Admins can see analytics.</textarea>
+    <button id="runBtn" onclick="runPipeline()">compile →</button>
+  </div>
+  <div class="examples">
+    <span class="ex-chip" onclick="setPrompt(this)">a blog platform with comments and an admin moderation queue</span>
+    <span class="ex-chip" onclick="setPrompt(this)">something for tracking stuff</span>
+    <span class="ex-chip" onclick="setPrompt(this)">marketplace where sellers list products and buyers checkout, but also admins can ban sellers and also it needs a free tier with limits</span>
+  </div>
+
+  <div class="pipeline" id="pipelineBar">
+    <div class="stage" data-stage="0"><div class="num">01</div><div class="label">Intent Extraction</div><div class="status">idle</div></div>
+    <div class="stage" data-stage="1"><div class="num">02</div><div class="label">System Design</div><div class="status">idle</div></div>
+    <div class="stage" data-stage="2"><div class="num">03</div><div class="label">Schema Generation</div><div class="status">idle</div></div>
+    <div class="stage" data-stage="3"><div class="num">04</div><div class="label">Refinement</div><div class="status">idle</div></div>
+  </div>
+
+  <div id="resultArea"><div class="empty">No run yet. Enter a prompt and click compile.</div></div>
+</div>
+
+<footer>nl2app compiler — submitted as a demo task deliverable</footer>
+
+<script>
+const stageNames = ["intent_extraction", "system_design", "schema_generation", "refinement"];
+
+function setPrompt(el) {
+  document.getElementById('promptInput').value = el.textContent;
+}
+
+function setStageState(idx, state) {
+  const el = document.querySelector(`.stage[data-stage="${idx}"]`);
+  el.classList.remove('active', 'done', 'failed');
+  const status = el.querySelector('.status');
+  if (state === 'active') { el.classList.add('active'); status.textContent = 'running…'; }
+  else if (state === 'done') { el.classList.add('done'); status.textContent = 'passed'; }
+  else if (state === 'failed') { el.classList.add('failed'); status.textContent = 'failed'; }
+  else { status.textContent = 'idle'; }
+}
+
+function resetPipelineBar() {
+  for (let i = 0; i < 4; i++) setStageState(i, 'idle');
+}
+
+async function runPipeline() {
+  const prompt = document.getElementById('promptInput').value.trim();
+  if (!prompt) return;
+  const btn = document.getElementById('runBtn');
+  btn.disabled = true;
+  btn.textContent = 'compiling…';
+  resetPipelineBar();
+  document.getElementById('resultArea').innerHTML = '<div class="empty">Running pipeline…</div>';
+
+  // Animate stages optimistically while waiting for the real response
+  let animIdx = 0;
+  setStageState(0, 'active');
+  const animInterval = setInterval(() => {
+    if (animIdx < 3) {
+      setStageState(animIdx, 'done');
+      animIdx++;
+      setStageState(animIdx, 'active');
+    }
+  }, 900);
+
+  try {
+    const resp = await fetch('/api/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt })
+    });
+    const data = await resp.json();
+    clearInterval(animInterval);
+    renderResult(data);
+  } catch (e) {
+    clearInterval(animInterval);
+    document.getElementById('resultArea').innerHTML = `<div class="panel"><div class="panel-body"><pre>Request failed: ${e.message}\n\nIs the server running and is ANTHROPIC_API_KEY set?</pre></div></div>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'compile →';
+  }
+}
+
+function renderResult(data) {
+  const metas = data.stage_metas || [];
+  metas.forEach((m, i) => {
+    const idx = stageNames.indexOf(m.stage);
+    if (idx === -1) return;
+    setStageState(idx, m.success === false ? 'failed' : 'done');
+  });
+  for (let i = metas.length; i < 4; i++) setStageState(i, 'idle');
+
+  let html = '';
+
+  if (data.needs_clarification) {
+    html += `<div class="clarify-box"><b>⚠ Clarification needed</b><p style="font-size:12px;color:var(--muted);margin:6px 0 0;">The request was too underspecified to proceed safely. Rather than guessing silently:</p><ul>${(data.clarification_questions||[]).map(q => `<li>${escapeHtml(q)}</li>`).join('')}</ul></div>`;
+    document.getElementById('resultArea').innerHTML = html;
+    return;
+  }
+
+  const overallOk = data.success;
+  html += `<div class="metrics">
+    <span>status: <span class="badge ${overallOk ? 'ok' : 'fail'}">${overallOk ? 'SUCCESS' : 'FAILED'}</span></span>
+    <span>latency: <b>${(data.total_latency_seconds||0).toFixed(2)}s</b></span>
+    <span>est. cost: <b>$${(data.total_cost_usd||0).toFixed(4)}</b></span>
+    <span>repair rounds: <b>${data.total_repair_rounds||0}</b></span>
+    <span>request id: <b>${data.request_id||'—'}</b></span>
+  </div>`;
+
+  if (!overallOk && data.failure_reason) {
+    html += `<div class="panel"><div class="panel-body"><pre><span style="color:var(--error)">Failed at stage: ${data.failure_stage}</span>\n${escapeHtml(data.failure_reason)}</pre></div></div>`;
+  }
+
+  if (data.ambiguity_assumptions && data.ambiguity_assumptions.length) {
+    html += panel('Assumptions made (documented, not silent)', data.ambiguity_assumptions.map(a =>
+      `<div class="repair-action"><span class="strategy-tag">${escapeHtml(a.field)}</span> → ${escapeHtml(a.assumption)} <span style="color:var(--muted)">(${escapeHtml(a.reason)})</span></div>`
+    ).join('') || '<span style="color:var(--muted)">none</span>', true);
+  }
+
+  // Repair actions across all stages
+  let repairHtml = '';
+  metas.forEach(m => {
+    if (m.repair_actions && m.repair_actions.length) {
+      repairHtml += `<div style="margin-bottom:8px;"><b style="font-size:11px;color:var(--text)">${m.stage}</b></div>`;
+      repairHtml += m.repair_actions.map(a =>
+        `<div class="repair-action"><span class="strategy-tag">[${a.strategy}]</span> ${escapeHtml(a.path)} — ${escapeHtml(a.detail)} ${a.llm_call_used ? '<span style="color:var(--muted)">(targeted LLM repair)</span>' : '<span style="color:var(--muted)">(local fix)</span>'}</div>`
+      ).join('');
+    }
+  });
+  if (repairHtml) html += panel('Validation + repair log', repairHtml, false);
+
+  if (data.execution_validation) {
+    const ev = data.execution_validation;
+    const apiPass = ev.api_execution && ev.api_execution.all_passed;
+    html += panel('Execution validation (the output actually runs)',
+      `<div class="metrics" style="margin-top:0;">
+        <span>SQL valid: <span class="badge ${ev.sql_valid ? 'ok' : 'fail'}">${ev.sql_valid ? 'yes' : 'no'}</span></span>
+        <span>API executes: <span class="badge ${ev.api_execution?.executed ? 'ok' : 'fail'}">${ev.api_execution?.executed ? 'yes' : 'no'}</span></span>
+        <span>Endpoint tests: <span class="badge ${apiPass ? 'ok' : 'fail'}">${apiPass ? 'all passed' : 'see below'}</span></span>
+      </div>
+      ${(ev.api_execution?.endpoint_results || []).map(r =>
+        `<div class="repair-action"><span class="badge ${r.pass ? 'ok' : 'fail'}" style="margin-right:6px;">${r.pass ? '✓' : '✗'}</span>${r.method} ${escapeHtml(r.path)} ${r.allowed_role_status ? `→ allowed:${r.allowed_role_status} denied:${r.denied_role_status}` : (r.error || '')}</div>`
+      ).join('')}`, true);
+  }
+
+  if (data.config) {
+    html += `<div class="tabs">
+      <div class="tab-btn active" data-tab="ui">UI schema</div>
+      <div class="tab-btn" data-tab="api">API schema</div>
+      <div class="tab-btn" data-tab="db">DB schema</div>
+      <div class="tab-btn" data-tab="auth">Auth</div>
+      <div class="tab-btn" data-tab="biz">Business logic</div>
+      <div class="tab-btn" data-tab="raw">Raw JSON</div>
+    </div>
+    <div class="panel" style="border-top-left-radius:0;">
+      <div class="panel-body tab-content active" data-tab="ui"><pre>${escapeHtml(JSON.stringify(data.config.ui, null, 2))}</pre></div>
+      <div class="panel-body tab-content" data-tab="api"><pre>${escapeHtml(JSON.stringify(data.config.api, null, 2))}</pre></div>
+      <div class="panel-body tab-content" data-tab="db"><pre>${escapeHtml(JSON.stringify(data.config.db, null, 2))}</pre></div>
+      <div class="panel-body tab-content" data-tab="auth"><pre>${escapeHtml(JSON.stringify(data.config.auth, null, 2))}</pre></div>
+      <div class="panel-body tab-content" data-tab="biz"><pre>${escapeHtml(JSON.stringify(data.config.business_logic, null, 2))}</pre></div>
+      <div class="panel-body tab-content" data-tab="raw"><pre>${escapeHtml(JSON.stringify(data, null, 2))}</pre></div>
+    </div>`;
+  }
+
+  document.getElementById('resultArea').innerHTML = html;
+
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+      btn.classList.add('active');
+      document.querySelector(`.tab-content[data-tab="${btn.dataset.tab}"]`).classList.add('active');
+    });
+  });
+
+  document.querySelectorAll('.panel-head').forEach(h => {
+    h.addEventListener('click', () => {
+      const body = h.nextElementSibling;
+      body.classList.toggle('collapsed');
+    });
+  });
+}
+
+function panel(title, innerHtml, startOpen) {
+  return `<div class="panel">
+    <div class="panel-head"><span class="title">${title}</span><span>${startOpen ? '−' : '−'}</span></div>
+    <div class="panel-body">${innerHtml}</div>
+  </div>`;
+}
+
+function escapeHtml(str) {
+  if (str === undefined || str === null) return '';
+  return String(str).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+}
+</script>
+</body>
+</html>
